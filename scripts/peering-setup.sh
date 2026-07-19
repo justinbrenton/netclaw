@@ -81,8 +81,16 @@ daemon_start() {
     # Pull only the daemon's keys from .env — values may contain JSON, and
     # other .env lines have unquoted spaces that break plain `source`.
     log_info "Starting mesh BGP daemon..."
+    # Export the per-user runtime dir so the daemon can reach the systemd
+    # --user bus (required for the spec-057 sandbox confinement control to
+    # probe available). Without it the launched env lacks XDG_RUNTIME_DIR and
+    # `systemctl --user` cannot connect, dropping sandbox to degraded.
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
     env $(grep -E "^(NETCLAW_ROUTER_ID|NETCLAW_LOCAL_AS|NETCLAW_LAB_MODE|NETCLAW_MESH_ENABLED|NETCLAW_MESH_OPEN|BGP_LISTEN_PORT|BGP_API_PORT|N2N_ENABLED|N2N_DISPLAY_NAME|N2N_RATE_PER_MIN|N2N_DAILY_REQUESTS|N2N_DAILY_TOKENS|N2N_ROLE|N2N_RISK_NAME|N2N_RISK_DESCRIPTION|N2N_ENABLED_STACKS|N2N_IN2N_PORT|N2N_RISK_MODE|N2N_BORDER_ENDPOINT|N2N_QUARANTINE_THRESHOLD|N2N_CERT_MODE|N2N_CLAW_DOMAIN|N2N_ACME_DNS_PROVIDER|N2N_ACME_EMAIL)=" "$OPENCLAW_ENV") \
         NETCLAW_BGP_PEERS="$(env_get NETCLAW_BGP_PEERS)" \
+        XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+        DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
         nohup python3 "$BGP_DAEMON" >> "$DAEMON_OUT" 2>&1 &
     local pid=$!
     sleep 3
