@@ -2554,7 +2554,19 @@ echo ""
 
 # ── Deploy skills and configuration ─────────────────────────────
 core_deploy() {
-log_step "Deploying skills and configuration..."
+    # Resumable guard: if core_runtime failed, SUCCESSFUL_COMPONENTS may be unset.
+    # Fall back to the component manifest if available.
+    if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
+        log_warn "SUCCESSFUL_COMPONENTS not set — using all components from manifest"
+        if [ -f "$NETCLAW_MANIFEST" ]; then
+            SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
+        else
+            log_error "No component manifest found — cannot deploy"
+            return 1
+        fi
+    fi
+
+    log_step "Deploying skills and configuration..."
 
 PYATS_SCRIPT="$NETCLAW_DIR/scripts/pyats-stdio.py"
 TESTBED_PATH="$NETCLAW_DIR/testbed/testbed.yaml"
