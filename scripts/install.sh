@@ -399,9 +399,14 @@ echo ""
 if [ "${RESUME_MODE:-0}" -eq 1 ]; then
     log_info "Resuming from core_deploy (skipping core_runtime, core_onboard, core_gateway_check)"
     # Load components from manifest if SUCCESSFUL_COMPONENTS not set
-    if [ -z "${SUCCESSFUL_COMPONENTS:-}" ] && [ -f "$NETCLAW_MANIFEST" ]; then
-        SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
-        log_info "Loaded components from manifest: $SUCCESSFUL_COMPONENTS"
+    if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
+        if [ -f "$NETCLAW_MANIFEST" ]; then
+            SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
+            log_info "Loaded components from manifest: $SUCCESSFUL_COMPONENTS"
+        else
+            log_error "RESUME_MODE requires NETCLAW_MANIFEST to load components — cannot resume"
+            return 1
+        fi
     fi
 else
     core_prereqs
