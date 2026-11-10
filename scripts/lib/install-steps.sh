@@ -1356,6 +1356,7 @@ else
     if ! command -v uvx &> /dev/null; then
         curl -LsSf https://astral.sh/uv/install.sh 2>/dev/null | sh 2>/dev/null || true
         export PATH="$HOME/.local/bin:$PATH"
+        hash -r
     fi
     if command -v uvx &> /dev/null; then
         log_info "uv installed successfully"
