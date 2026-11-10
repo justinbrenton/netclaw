@@ -154,9 +154,6 @@ def emit_yaml(
             venv_python = None
             if name in server_venv_python:
                 venv_python = server_venv_python[name]
-            elif spec.get("command") in ("python", "python3"):
-                # Fallback: if command is python/python3 but no venv mapping, use as-is
-                pass
 
             if venv_python:
                 lines.append(f"    command: {yaml_scalar(venv_python)}")
@@ -255,15 +252,20 @@ def component_for_server(server: str) -> str | None:
 
 
 def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
-    """Load component venv Python paths from runtime root records directory."""
+    """Load component venv Python paths from runtime root records directory.
+    
+    Only includes paths that exist and are executable.
+    """
     venv_python = {}
     records_dir = Path(runtime_root) / "records"
     if records_dir.is_dir():
         for record in records_dir.iterdir():
             if record.is_file():
                 python_path = record.read_text().strip()
-                if python_path:
+                if python_path and os.path.exists(python_path) and os.access(python_path, os.X_OK):
                     venv_python[record.name] = python_path
+                elif python_path:
+                    print(f"[WARN] Component venv Python path not executable: {python_path}", file=sys.stderr)
     return venv_python
 
 
@@ -308,16 +310,9 @@ def main() -> int:
     # Load component venv paths from runtime root
     venv_python = {}
     if args.runtime_root:
-        runtime_root = Path(args.runtime_root)
-        records_dir = runtime_root / "records"
-        if records_dir.is_dir():
-            for record in records_dir.iterdir():
-                if record.is_file():
-                    python_path = record.read_text().strip()
-                    if python_path:
-                        venv_python[record.name] = python_path
+        venv_python = load_venv_python_paths(Path(args.runtime_root))
         if venv_python:
-            print(f"[INFO] Loaded {len(venv_python)} component venv Python paths from {records_dir}")
+            print(f"[INFO] Loaded {len(venv_python)} component venv Python paths")
 
     # Map servers to components
     component_map = {}
