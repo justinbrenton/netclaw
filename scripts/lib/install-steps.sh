@@ -242,6 +242,7 @@ if [ "$RUNTIME" = "hermes" ]; then
             *":$HOME/.local/bin:"*) : ;;
             *) export PATH="$HOME/.local/bin:$PATH" ;;
         esac
+        hash -r
         if command -v hermes &> /dev/null; then
             log_info "Hermes installed successfully"
         else
@@ -250,7 +251,7 @@ if [ "$RUNTIME" = "hermes" ]; then
             return 1
         fi
     fi
-    hermes version >/dev/null 2>&1 || { log_error "Hermes executable verification failed"; return 1; }
+    "$HOME/.local/bin/hermes" --version >/dev/null 2>&1 || { log_error "Hermes executable verification failed"; return 1; }
     echo ""
     return 0
 fi
