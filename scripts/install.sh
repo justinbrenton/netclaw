@@ -124,6 +124,7 @@ while [ $# -gt 0 ]; do
             SELECTED="$(profile_components full)"
             CLI_MODE=1; shift ;;
         --preflight) PREFLIGHT_ONLY=1; shift ;;
+        --resume) RESUME_MODE=1; shift ;;
         --list)  list_components; exit 0 ;;
         --help|-h) usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
@@ -394,10 +395,21 @@ echo ""
 # Core steps (always run)
 # ═══════════════════════════════════════════
 
-core_prereqs
-core_runtime
-core_onboard
-core_gateway_check
+# Resume mode: skip core_runtime, core_onboard, core_gateway_check
+if [ "${RESUME_MODE:-0}" -eq 1 ]; then
+    log_info "Resuming from core_deploy (skipping core_runtime, core_onboard, core_gateway_check)"
+    # Load components from manifest if SUCCESSFUL_COMPONENTS not set
+    if [ -z "${SUCCESSFUL_COMPONENTS:-}" ] && [ -f "$NETCLAW_MANIFEST" ]; then
+        SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
+        log_info "Loaded components from manifest: $SUCCESSFUL_COMPONENTS"
+    fi
+else
+    core_prereqs
+    core_runtime
+    core_onboard
+    core_gateway_check
+fi
+
 core_mcpdir
 
 # ═══════════════════════════════════════════
