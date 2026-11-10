@@ -506,6 +506,70 @@ def is_configured(spec: dict, repo: Path, env: dict[str, str]) -> bool:
     return not any("${" in p for p in probe)
 
 
+def abspath_arg(token: str, repo: Path) -> str:
+    """Make a relative NetClaw path (mcp-servers/...) absolute; leave bare
+    commands (python3, npx, ...) and already-absolute paths untouched."""
+    if token.startswith("mcp-servers/") or token.startswith("scripts/") or token.startswith("src/"):
+        return str((repo / token).resolve())
+    return token
+
+
+def yaml_scalar(s: str) -> str:
+    """Double-quote a scalar with minimal escaping (safe for our value set)."""
+    return json.dumps(s, ensure_ascii=False)
+
+
+def companion_env(env_block: dict, env_file_vars: dict[str, str]) -> dict[str, str]:
+    """Return .env vars that belong to a server's own namespace but are absent
+    from its explicit env block.
+
+    OpenClaw sources the shared ~/.openclaw/.env into its own process, so every
+    MCP subprocess inherits it in full — a server can read e.g. CML_VERIFY_SSL
+    even though it never appears in that server's openclaw.json ``env`` block.
+    Hermes, by contrast, passes ONLY the explicit block to the subprocess, so any
+    such implicitly-inherited var silently disappears in the port. The concrete
+    fallout: cml-mcp then verifies a self-signed cert and crashes at import, and
+    the client sits forever on "connecting".
+
+    We reproduce the inheritance *scoped to the server's own prefix* — the token
+    before the first underscore of a key it already declares (``CML`` from
+    ``CML_URL``). That materialises CML_VERIFY_SSL for cml-mcp while deliberately
+    NOT dragging CHKP_* into a Check Point server whose block keys are generic
+    (``MANAGEMENT_HOST``, ``API_KEY``), since those share no prefix. Only the
+    parsed .env file is a source — never the porting shell's ambient environment
+    — so the output stays reproducible and free of unrelated host vars.
+    """
+    prefixes = {k.split("_", 1)[0] for k in env_block if "_" in k}
+    return {
+        k: v
+        for k, v in env_file_vars.items()
+        if k not in env_block and "_" in k and k.split("_", 1)[0] in prefixes
+    }
+
+
+def is_configured(spec: dict, repo: Path, env: dict[str, str]) -> bool:
+    """A server is 'configured' when none of its command/args/url/header/env
+    values still holds an unresolved ``${VAR}`` placeholder after .env
+    expansion. Unconfigured servers (missing required creds) are emitted
+    ``enabled: false`` so Hermes never launches them — no failed connect, no
+    reconnect-park churn, no shutdown-teardown noise. Fill the creds in .env
+    and re-run the port (or flip ``enabled: true``) to bring one online."""
+    probe: list[str] = []
+    command = spec.get("command")
+    url = spec.get("url")
+    if command:
+        probe.append(abspath_arg(str(command), repo))
+        for a in (spec.get("args") or []):
+            probe.append(abspath_arg(expand(str(a), env), repo))
+    elif url:
+        probe.append(expand(str(url), env))
+    for hv in (spec.get("headers") or {}).values():
+        probe.append(expand(str(hv), env))
+    for ev in (spec.get("env") or {}).values():
+        probe.append(expand(str(ev), env))
+    return not any("${" in p for p in probe)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", required=True, help="path to config/openclaw.json")
