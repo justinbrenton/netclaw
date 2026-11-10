@@ -22,19 +22,191 @@ sidecar file and the user is told to merge it (we never rewrite existing YAML).
 
 Usage:
     openclaw-to-hermes-mcp.py \
-        --source   config/openclaw.json \
-        --repo     /path/to/netclaw \
-        --env      ~/.hermes/.env \
-        --config   ~/.hermes/config.yaml \
-        --sidecar  ~/.hermes/netclaw-mcp-servers.yaml
+        --source      config/openclaw.json \
+        --repo        /path/to/netclaw \
+        --env         ~/.hermes/.env \
+        --config      ~/.hermes/config.yaml \
+        --sidecar     ~/.hermes/netclaw-mcp-servers.yaml \
+        --runtime-root ~/.hermes/profiles/netclaw/python-runtimes
 
 Stdlib only — no PyYAML dependency (the YAML we emit is a fixed, simple shape).
 """
+
 from __future__ import annotations
 
 import argparse
-import json
 import importlib.util
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'lib'))
+from mcp_environment import native_entry
+
+_writer_spec = importlib.util.spec_from_file_location("netclaw_literal_writer", Path(__file__).with_name("write-env.py"))
+_writer = importlib.util.module_from_spec(_writer_spec)
+_writer_spec.loader.exec_module(_writer)
+
+_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
+
+
+def component_for_server(server: str) -> str | None:
+    """Map a server name to its component (from install-mcp-config.py logic)."""
+    # Exact match from GROUPED_CONFIG_EXACT
+    exact_map = {
+        "batfish-mcp": "batfish",
+        "n2n-mcp": "n2n",
+        "rag-mcp": "rag-mcp",
+        "protocol-mcp": "protocol",
+        "gait-mcp": "gait",
+        "globalping-mcp": "globalping",
+        "bgp-intel-mcp": "bgp-intel",
+        "document-mcp": "document",
+        "jev-mcp": "jev",
+        "pyats-mcp": "pyats",
+        "netbox-mcp": "netbox",
+        "servicenow-mcp": "servicenow",
+        "nvd-cve-mcp": "nvd-cve",
+        "subnet-calc-mcp": "subnet-calc",
+        "wikipedia-mcp": "wikipedia",
+        "markmap-mcp": "markmap",
+        "drawio-mcp": "drawio-rfc",
+        "rfc-mcp": "drawio-rfc",
+        "packet-buddy-mcp": "packet-buddy",
+        "nmap-mcp": "nmap",
+        "gtrace-mcp": "gtrace",
+        "tts-mcp": "tts",
+        "suzieq-mcp": "suzieq",
+        "uml-mcp": "uml",
+    }
+    if server in exact_map:
+        return exact_map[server]
+
+    # Prefix-based mapping
+    prefix_map = {
+        "batfish": "batfish",
+        "n2n": "n2n",
+        "rag": "rag-mcp",
+        "protocol": "protocol",
+        "gait": "gait",
+        "globalping": "globalping",
+        "bgp-intel": "bgp-intel",
+        "document": "document",
+        "jev": "jev",
+        "pyats": "pyats",
+        "netbox": "netbox",
+        "servicenow": "servicenow",
+        "nvd-cve": "nvd-cve",
+        "subnet-calc": "subnet-calc",
+        "wikipedia": "wikipedia",
+        "markmap": "markmap",
+        "drawio": "drawio-rfc",
+        "rfc": "drawio-rfc",
+        "packet-buddy": "packet-buddy",
+        "nmap": "nmap",
+        "gtrace": "gtrace",
+        "tts": "tts",
+        "suzieq": "suzieq",
+        "uml": "uml",
+    }
+    for prefix, component in prefix_map.items():
+        if server.startswith(prefix):
+            return component
+
+    # Fallback: strip -mcp suffix
+    if server.endswith("-mcp"):
+        return server[:-4]
+    return None
+
+
+def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
+    """Load component venv Python paths from runtime root records directory."""
+    venv_python = {}
+    records_dir = Path(runtime_root) / "records"
+    if records_dir.is_dir():
+        for record in records_dir.iterdir():
+            if record.is_file():
+                python_path = record.read_text().strip()
+                if python_path:
+                    venv_python[record.name] = python_path
+    return venv_python
+
+
+def component_for_server(server: str) -> str | None:
+    """Map a server name to its component (from install-mcp-config.py logic)."""
+    # Exact match from GROUPED_CONFIG_EXACT
+    exact_map = {
+        "batfish-mcp": "batfish",
+        "n2n-mcp": "n2n",
+        "rag-mcp": "rag-mcp",
+        "protocol-mcp": "protocol",
+        "gait-mcp": "gait",
+        "globalping-mcp": "globalping",
+        "bgp-intel-mcp": "bgp-intel",
+        "document-mcp": "document",
+        "jev-mcp": "jev",
+        "pyats-mcp": "pyats",
+        "netbox-mcp": "netbox",
+        "servicenow-mcp": "servicenow",
+        "nvd-cve-mcp": "nvd-cve",
+        "subnet-calc-mcp": "subnet-calc",
+        "wikipedia-mcp": "wikipedia",
+        "markmap-mcp": "markmap",
+        "drawio-mcp": "drawio-rfc",
+        "rfc-mcp": "drawio-rfc",
+        "packet-buddy-mcp": "packet-buddy",
+        "nmap-mcp": "nmap",
+        "gtrace-mcp": "gtrace",
+        "tts-mcp": "tts",
+        "suzieq-mcp": "suzieq",
+        "uml-mcp": "uml",
+    }
+    if server in exact_map:
+        return exact_map[server]
+
+    # Prefix-based mapping
+    prefix_map = {
+        "batfish": "batfish",
+        "n2n": "n2n",
+        "rag": "rag-mcp",
+        "protocol": "protocol",
+        "gait": "gait",
+        "globalping": "globalping",
+        "bgp-intel": "bgp-intel",
+        "document": "document",
+        "jev": "jev",
+        "pyats": "pyats",
+        "netbox": "netbox",
+        "servicenow": "servicenow",
+        "nvd-cve": "nvd-cve",
+        "subnet-calc": "subnet-calc",
+        "wikipedia": "wikipedia",
+        "markmap": "markmap",
+        "drawio": "drawio-rfc",
+        "rfc": "drawio-rfc",
+        "packet-buddy": "packet-buddy",
+        "nmap": "nmap",
+        "gtrace": "gtrace",
+        "tts": "tts",
+        "suzieq": "suzieq",
+        "uml": "uml",
+    }
+    for prefix, component in prefix_map.items():
+        if server.startswith(prefix):
+            return component
+
+    # Fallback: strip -mcp suffix
+    if server.endswith("-mcp"):
+        return server[:-4]
+    return None
+
+
+# --- Original imports and setup ---
+import argparse
+import importlib.util
+import json
 import os
 import re
 import sys
@@ -60,7 +232,6 @@ def parse_env_file(path: Path) -> dict[str, str]:
 def expand(value: str, env: dict[str, str]) -> str:
     """Resolve ${VAR} / ${VAR:-default} against env. Unresolved bare vars
     keep their literal ${VAR} form as an obvious placeholder."""
-
     def repl(m: re.Match) -> str:
         name, has_default, default = m.group(1), m.group(2), m.group(3)
         if name in env and env[name] != "":
@@ -68,7 +239,6 @@ def expand(value: str, env: dict[str, str]) -> str:
         if has_default:
             return default if default is not None else ""
         return m.group(0)  # leave ${VAR} literal
-
     return _VAR_RE.sub(repl, value)
 
 
@@ -103,7 +273,72 @@ def companion_env(env_block: dict, env_file_vars: dict[str, str]) -> dict[str, s
     NOT dragging CHKP_* into a Check Point server whose block keys are generic
     (``MANAGEMENT_HOST``, ``API_KEY``), since those share no prefix. Only the
     parsed .env file is a source — never the porting shell's ambient environment
-    — so the output stays reproducible and free of unrelated host vars."""
+    — so the output stays reproducible and free of unrelated host vars.
+    """
+    prefixes = {k.split("_", 1)[0] for k in env_block if "_" in k}
+    return {
+        k: v
+        for k, v in env_file_vars.items()
+        if k not in env_block and "_" in k and k.split("_", 1)[0] in prefixes
+    }
+
+
+def is_configured(spec: dict, repo: Path, env: dict[str, str]) -> bool:
+    """A server is 'configured' when none of its command/args/url/header/env
+    values still holds an unresolved ``${VAR}`` placeholder after .env
+    expansion. Unconfigured servers (missing required creds) are emitted
+    ``enabled: false`` so Hermes never launches them — no failed connect, no
+    reconnect-park churn, no shutdown-teardown noise. Fill the creds in .env
+    and re-run the port (or flip ``enabled: true``) to bring one online."""
+    probe: list[str] = []
+    command = spec.get("command")
+    url = spec.get("url")
+    if command:
+        probe.append(abspath_arg(str(command), repo))
+        for a in (spec.get("args") or []):
+            probe.append(abspath_arg(expand(str(a), env), repo))
+    elif url:
+        probe.append(expand(str(url), env))
+    for hv in (spec.get("headers") or {}).values():
+        probe.append(expand(str(hv), env))
+    for ev in (spec.get("env") or {}).values():
+        probe.append(expand(str(ev), env))
+    return not any("${" in p for p in probe)
+
+
+def abspath_arg(token: str, repo: Path) -> str:
+    """Make a relative NetClaw path (mcp-servers/...) absolute; leave bare
+    commands (python3, npx, ...) and already-absolute paths untouched."""
+    if token.startswith("mcp-servers/") or token.startswith("scripts/") or token.startswith("src/"):
+        return str((repo / token).resolve())
+    return token
+
+
+def yaml_scalar(s: str) -> str:
+    """Double-quote a scalar with minimal escaping (safe for our value set)."""
+    return json.dumps(s, ensure_ascii=False)
+
+
+def companion_env(env_block: dict, env_file_vars: dict[str, str]) -> dict[str, str]:
+    """Return .env vars that belong to a server's own namespace but are absent
+    from its explicit env block.
+
+    OpenClaw sources the shared ~/.openclaw/.env into its own process, so every
+    MCP subprocess inherits it in full — a server can read e.g. CML_VERIFY_SSL
+    even though it never appears in that server's openclaw.json ``env`` block.
+    Hermes, by contrast, passes ONLY the explicit block to the subprocess, so any
+    such implicitly-inherited var silently disappears in the port. The concrete
+    fallout: cml-mcp then verifies a self-signed cert and crashes at import, and
+    the client sits forever on "connecting".
+
+    We reproduce the inheritance *scoped to the server's own prefix* — the token
+    before the first underscore of a key it already declares (``CML`` from
+    ``CML_URL``). That materialises CML_VERIFY_SSL for cml-mcp while deliberately
+    NOT dragging CHKP_* into a Check Point server whose block keys are generic
+    (``MANAGEMENT_HOST``, ``API_KEY``), since those share no prefix. Only the
+    parsed .env file is a source — never the porting shell's ambient environment
+    — so the output stays reproducible and free of unrelated host vars.
+    """
     prefixes = {k.split("_", 1)[0] for k in env_block if "_" in k}
     return {
         k: v
@@ -140,6 +375,7 @@ def emit_yaml(
     repo: Path,
     env: dict[str, str],
     env_file_vars: dict[str, str],
+    server_venv_python: dict[str, str],
 ) -> str:
     lines = ["mcp_servers:"]
     for name, spec in servers.items():
@@ -148,7 +384,19 @@ def emit_yaml(
         command = spec.get("command")
         url = spec.get("url")
         if command:
-            lines.append(f"    command: {yaml_scalar(abspath_arg(str(command), repo))}")
+            # Use component venv Python for stdio servers
+            venv_python = None
+            if name in server_venv_python:
+                venv_python = server_venv_python[name]
+            elif spec.get("command") in ("python", "python3"):
+                # Fallback: if command is python/python3 but no venv mapping, use as-is
+                pass
+
+            if venv_python:
+                lines.append(f"    command: {yaml_scalar(venv_python)}")
+            else:
+                lines.append(f"    command: {yaml_scalar(abspath_arg(str(command), repo))}")
+
             args = spec.get("args") or []
             if args:
                 lines.append("    args:")
@@ -174,6 +422,159 @@ def emit_yaml(
     return "\n".join(lines) + "\n"
 
 
+def component_for_server(server: str) -> str | None:
+    """Map a server name to its component (from install-mcp-config.py logic)."""
+    # Exact match from GROUPED_CONFIG_EXACT
+    exact_map = {
+        "batfish-mcp": "batfish",
+        "n2n-mcp": "n2n",
+        "rag-mcp": "rag-mcp",
+        "protocol-mcp": "protocol",
+        "gait-mcp": "gait",
+        "globalping-mcp": "globalping",
+        "bgp-intel-mcp": "bgp-intel",
+        "document-mcp": "document",
+        "jev-mcp": "jev",
+        "pyats-mcp": "pyats",
+        "netbox-mcp": "netbox",
+        "servicenow-mcp": "servicenow",
+        "nvd-cve-mcp": "nvd-cve",
+        "subnet-calc-mcp": "subnet-calc",
+        "wikipedia-mcp": "wikipedia",
+        "markmap-mcp": "markmap",
+        "drawio-mcp": "drawio-rfc",
+        "rfc-mcp": "drawio-rfc",
+        "packet-buddy-mcp": "packet-buddy",
+        "nmap-mcp": "nmap",
+        "gtrace-mcp": "gtrace",
+        "tts-mcp": "tts",
+        "suzieq-mcp": "suzieq",
+        "uml-mcp": "uml",
+    }
+    if server in exact_map:
+        return exact_map[server]
+
+    # Prefix-based mapping
+    prefix_map = {
+        "batfish": "batfish",
+        "n2n": "n2n",
+        "rag": "rag-mcp",
+        "protocol": "protocol",
+        "gait": "gait",
+        "globalping": "globalping",
+        "bgp-intel": "bgp-intel",
+        "document": "document",
+        "jev": "jev",
+        "pyats": "pyats",
+        "netbox": "netbox",
+        "servicenow": "servicenow",
+        "nvd-cve": "nvd-cve",
+        "subnet-calc": "subnet-calc",
+        "wikipedia": "wikipedia",
+        "markmap": "markmap",
+        "drawio": "drawio-rfc",
+        "rfc": "drawio-rfc",
+        "packet-buddy": "packet-buddy",
+        "nmap": "nmap",
+        "gtrace": "gtrace",
+        "tts": "tts",
+        "suzieq": "suzieq",
+        "uml": "uml",
+    }
+    for prefix, component in prefix_map.items():
+        if server.startswith(prefix):
+            return component
+
+    # Fallback: strip -mcp suffix
+    if server.endswith("-mcp"):
+        return server[:-4]
+    return None
+
+
+def parse_env_file(path: Path) -> dict[str, str]:
+    """Parse a KEY=VALUE .env file. Missing file -> empty dict."""
+    if not path or not path.is_file():
+        return {}
+    return _writer.values(path.read_text())
+
+
+def expand(value: str, env: dict[str, str]) -> str:
+    """Resolve ${VAR} / ${VAR:-default} against env. Unresolved bare vars
+    keep their literal ${VAR} form as an obvious placeholder."""
+    def repl(m: re.Match) -> str:
+        name, has_default, default = m.group(1), m.group(2), m.group(3)
+        if name in env and env[name] != "":
+            return env[name]
+        if has_default:
+            return default if default is not None else ""
+        return m.group(0)  # leave ${VAR} literal
+    return _VAR_RE.sub(repl, value)
+
+
+def abspath_arg(token: str, repo: Path) -> str:
+    """Make a relative NetClaw path (mcp-servers/...) absolute; leave bare
+    commands (python3, npx, ...) and already-absolute paths untouched."""
+    if token.startswith("mcp-servers/") or token.startswith("scripts/") or token.startswith("src/"):
+        return str((repo / token).resolve())
+    return token
+
+
+def yaml_scalar(s: str) -> str:
+    """Double-quote a scalar with minimal escaping (safe for our value set)."""
+    return json.dumps(s, ensure_ascii=False)
+
+
+def companion_env(env_block: dict, env_file_vars: dict[str, str]) -> dict[str, str]:
+    """Return .env vars that belong to a server's own namespace but are absent
+    from its explicit env block.
+
+    OpenClaw sources the shared ~/.openclaw/.env into its own process, so every
+    MCP subprocess inherits it in full — a server can read e.g. CML_VERIFY_SSL
+    even though it never appears in that server's openclaw.json ``env`` block.
+    Hermes, by contrast, passes ONLY the explicit block to the subprocess, so any
+    such implicitly-inherited var silently disappears in the port. The concrete
+    fallout: cml-mcp then verifies a self-signed cert and crashes at import, and
+    the client sits forever on "connecting".
+
+    We reproduce the inheritance *scoped to the server's own prefix* — the token
+    before the first underscore of a key it already declares (``CML`` from
+    ``CML_URL``). That materialises CML_VERIFY_SSL for cml-mcp while deliberately
+    NOT dragging CHKP_* into a Check Point server whose block keys are generic
+    (``MANAGEMENT_HOST``, ``API_KEY``), since those share no prefix. Only the
+    parsed .env file is a source — never the porting shell's ambient environment
+    — so the output stays reproducible and free of unrelated host vars.
+    """
+    prefixes = {k.split("_", 1)[0] for k in env_block if "_" in k}
+    return {
+        k: v
+        for k, v in env_file_vars.items()
+        if k not in env_block and "_" in k and k.split("_", 1)[0] in prefixes
+    }
+
+
+def is_configured(spec: dict, repo: Path, env: dict[str, str]) -> bool:
+    """A server is 'configured' when none of its command/args/url/header/env
+    values still holds an unresolved ``${VAR}`` placeholder after .env
+    expansion. Unconfigured servers (missing required creds) are emitted
+    ``enabled: false`` so Hermes never launches them — no failed connect, no
+    reconnect-park churn, no shutdown-teardown noise. Fill the creds in .env
+    and re-run the port (or flip ``enabled: true``) to bring one online."""
+    probe: list[str] = []
+    command = spec.get("command")
+    url = spec.get("url")
+    if command:
+        probe.append(abspath_arg(str(command), repo))
+        for a in (spec.get("args") or []):
+            probe.append(abspath_arg(expand(str(a), env), repo))
+    elif url:
+        probe.append(expand(str(url), env))
+    for hv in (spec.get("headers") or {}).values():
+        probe.append(expand(str(hv), env))
+    for ev in (spec.get("env") or {}).values():
+        probe.append(expand(str(ev), env))
+    return not any("${" in p for p in probe)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", required=True, help="path to config/openclaw.json")
@@ -181,6 +582,7 @@ def main() -> int:
     ap.add_argument("--env", default="", help="shared .env for ${VAR} resolution")
     ap.add_argument("--config", required=True, help="target ~/.hermes/config.yaml")
     ap.add_argument("--sidecar", default="", help="fallback file if config.yaml already has mcp_servers")
+    ap.add_argument("--runtime-root", default="", help="path to python-runtimes dir (for component venv paths)")
     args = ap.parse_args()
 
     source = Path(args.source)
@@ -204,6 +606,35 @@ def main() -> int:
     env = dict(os.environ)
     env.update(env_file_vars)
 
+    # Load component venv paths from runtime root
+    venv_python = {}
+    if args.runtime_root:
+        runtime_root = Path(args.runtime_root)
+        records_dir = runtime_root / "records"
+        if records_dir.is_dir():
+            for record in records_dir.iterdir():
+                if record.is_file():
+                    python_path = record.read_text().strip()
+                    if python_path:
+                        venv_python[record.name] = python_path
+        if venv_python:
+            print(f"[INFO] Loaded {len(venv_python)} component venv Python paths from {records_dir}")
+
+    # Map servers to components
+    component_map = {}
+    for name in servers:
+        component = component_for_server(name)
+        if component:
+            component_map[name] = component
+
+    # Build venv Python map for each server
+    server_venv_python = {}
+    for name, component in component_map.items():
+        if component in venv_python:
+            server_venv_python[name] = venv_python[component]
+    if server_venv_python:
+        print(f"[INFO] Mapped {len(server_venv_python)} servers to component venv Python paths")
+
     injected = sum(
         len(companion_env(s.get("env") or {}, env_file_vars)) for s in servers.values()
     )
@@ -211,15 +642,15 @@ def main() -> int:
         print(f"[INFO] materialised {injected} .env var(s) implicitly inherited under "
               f"OpenClaw into their server env blocks (e.g. CML_VERIFY_SSL).")
 
-    block = emit_yaml(servers, repo, env, env_file_vars)
+    block = emit_yaml(servers, repo, env, env_file_vars, server_venv_python)
     config = Path(args.config)
     config.parent.mkdir(parents=True, exist_ok=True)
 
     existing = config.read_text() if config.is_file() else ""
     has_block = bool(re.search(r"(?m)^mcp_servers:\s*$", existing))
 
-    disabled = sum(1 for name,s in servers.items() if not is_configured(
-        native_entry(name,s,env,allow_legacy=True), repo, env))
+    disabled = sum(1 for name, s in servers.items() if not is_configured(
+        native_entry(name, s, env, allow_legacy=True), repo, env))
     if disabled:
         print(f"[INFO] {disabled}/{len(servers)} servers have unresolved required "
               f"env → emitted enabled:false (fill creds in .env + re-run to enable).")
