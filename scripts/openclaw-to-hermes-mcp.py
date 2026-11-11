@@ -162,8 +162,10 @@ def emit_yaml(
     repo: Path,
     env: dict[str, str],
     env_file_vars: dict[str, str],
-    server_venv_python: dict[str, str],
+    server_venv_python: dict[str, str] | None = None,
 ) -> str:
+    if server_venv_python is None:
+        server_venv_python = {}
     lines = ["mcp_servers:"]
     for name, spec in servers.items():
         spec = native_entry(name, spec, env, allow_legacy=True)
@@ -178,9 +180,9 @@ def emit_yaml(
                 command in ('python', 'python3')
                 or (command.startswith('mcp-servers/') and command.endswith('/.venv/bin/python'))
             )
-            venc_python = server_venv_python.get(name) if is_python_launcher else None
-            if venc_python:
-                lines.append(f"    command: {yaml_scalar(venc_python)}")
+            venv_python = server_venv_python.get(name) if is_python_launcher else None
+            if venv_python:
+                lines.append(f"    command: {yaml_scalar(venv_python)}")
             else:
                 lines.append(f"    command: {yaml_scalar(abspath_arg(str(command), repo))}")
             args = spec.get("args") or []
@@ -208,10 +210,9 @@ def emit_yaml(
     return "\n".join(lines) + "\n"
 
 
-
 def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
     """Load component venv Python paths from runtime root records directory.
-    
+
     Only includes paths that exist and are executable.
     Logs a warning and skips any record that fails to read.
     """
@@ -294,8 +295,13 @@ def main() -> int:
     for name, component in component_map.items():
         if component in venv_python:
             server_venv_python[name] = venv_python[component]
-    if server_venv_python:
-        print(f"[INFO] Mapped {len(server_venv_python)} servers to component venv Python paths")
+    def _is_py_launch(spec):
+        c = spec.get("command")
+        return c in ('python', 'python3') or (c.startswith('mcp-servers/') and c.endswith('/.venv/bin/python'))
+
+    py_mapped = sum(1 for n in server_venv_python if _is_py_launch(servers.get(n, {})))
+    if py_mapped:
+        print(f"[INFO] Mapped {py_mapped} Python-launch servers to component venv Python paths")
 
     block = emit_yaml(servers, repo, env, env_file_vars, server_venv_python)
     config = Path(args.config)
