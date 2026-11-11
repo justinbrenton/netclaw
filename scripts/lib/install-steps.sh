@@ -251,7 +251,7 @@ if [ "$RUNTIME" = "hermes" ]; then
             return 1
         fi
     fi
-    "$HOME/.local/bin/hermes" --version >/dev/null 2>&1 || { log_error "Hermes executable verification failed"; return 1; }
+    hermes --version >/dev/null 2>&1 || { log_error "Hermes executable verification failed"; return 1; }
     echo ""
     return 0
 fi
