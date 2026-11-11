@@ -2554,13 +2554,19 @@ echo ""
 
 # ── Deploy skills and configuration ─────────────────────────────
 core_deploy() {
-    # Resumable guard: if core_runtime failed, SUCCESSFUL_COMPONENTS may be unset.
-    # Fall back to the component manifest if available.
+    # Defensive fallback: core_deploy is normally reached only after the
+    # component loop has initialised SUCCESSFUL_COMPONENTS, so an unset/empty
+    # value here means the caller (e.g. a resume path) never populated it.
+    # When that happens, fall back to the component manifest if available;
+    # proceed with an empty set rather than aborting.
     # Use codebase convention ${var:-} for default values.
     if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
-        log_warn "SUCCESSFUL_COMPONENTS not set — using all components from manifest"
+        log_warn "SUCCESSFUL_COMPONENTS not set — using components from manifest"
         if [ -f "$NETCLAW_MANIFEST" ]; then
-            SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
+            # Same manifest parsing idiom as detect_existing() in install.sh:
+            # `|| true` guards pipefail on a comments-only manifest.
+            SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" 2>/dev/null | tr '\n' ' ' | tr -s ' ' || true)"
+            SUCCESSFUL_COMPONENTS="${SUCCESSFUL_COMPONENTS# }"; SUCCESSFUL_COMPONENTS="${SUCCESSFUL_COMPONENTS% }"
         else
             log_warn "No component manifest found — proceeding with empty component set"
             SUCCESSFUL_COMPONENTS=""
