@@ -2558,7 +2558,11 @@ core_deploy() {
     # component loop has initialised SUCCESSFUL_COMPONENTS, so an unset/empty
     # value here means the caller (e.g. a resume path) never populated it.
     # When that happens, fall back to the component manifest if available;
-    # proceed with an empty set rather than aborting.
+    # proceed with an empty set rather than aborting. Empty also occurs when
+    # every selected component fails verification — indistinguishable from
+    # unset under the codebase's ${var:-} convention, so a manifest present is
+    # trusted in that edge too; callers that need the distinction must check
+    # the value themselves before invoking core_deploy.
     # Use codebase convention ${var:-} for default values.
     if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
         log_warn "SUCCESSFUL_COMPONENTS not set — using components from manifest"
