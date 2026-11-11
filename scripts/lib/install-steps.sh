@@ -130,6 +130,8 @@ prereqs_offer_install() {
 }
 
 core_prereqs() {
+    # Resume mode: skip this stage — prerequisites verified on the original run.
+    [ "${RESUME_MODE:-0}" -eq 1 ] && { log_info "Resuming — skipping core_prereqs"; return 0; }
 local attempt="${1:-first}"
 log_step "Checking prerequisites..."
 
@@ -224,6 +226,8 @@ echo ""
 
 # ── Step 2: Install the agent runtime (OpenClaw or Hermes) ──────
 core_runtime() {
+    # Resume mode: skip this stage — previously completed on the original run.
+    [ "${RESUME_MODE:-0}" -eq 1 ] && { log_info "Resuming — skipping core_runtime"; return 0; }
 log_step "Installing $RUNTIME_NAME..."
 
 # ── Hermes (Nous Research) ──
@@ -272,6 +276,8 @@ echo ""
 
 # ── Step 3: Runtime onboarding (provider, gateway, channels) ────
 core_onboard() {
+    # Resume mode: skip this stage — onboarding completed on the original run.
+    [ "${RESUME_MODE:-0}" -eq 1 ] && { log_info "Resuming — skipping core_onboard"; return 0; }
 _import_runtime_env || return 1
 # ── Hermes: `hermes setup` wizard + `hermes gateway install` ──
 if [ "$RUNTIME" = "hermes" ]; then
@@ -354,6 +360,8 @@ echo ""
 # service fails to install or start (no systemd user bus, headless session,
 # permissions). Verify the real state instead of trusting the message.
 core_gateway_check() {
+    # Resume mode: skip this stage — gateway was verified on the original run.
+    [ "${RESUME_MODE:-0}" -eq 1 ] && { log_info "Resuming — skipping core_gateway_check"; return 0; }
     local attempt="${1:-first}" state="" i
 
     # ── Hermes: ask the CLI directly ──

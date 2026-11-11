@@ -62,6 +62,10 @@ usage() {
     echo "                            merges into the recorded component set"
     echo "  --all                     install everything ($TOTAL_COMPONENTS components)"
     echo "  --preflight               check the selection without installing anything"
+    echo "  --resume                  skip core steps (core_prereqs, core_runtime,"
+    echo "                            core_onboard, core_gateway_check) and re-enter at the"
+    echo "                            component install loop; components are re-verified"
+    echo "                            and re-installed"
     echo "  --list                    list all components and profiles, then exit"
     echo "  --help                    this help"
 }
@@ -91,6 +95,7 @@ SELECTED=""
 CLI_MODE=0
 ADD_MODE=0
 PREFLIGHT_ONLY=0
+RESUME_MODE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -124,6 +129,7 @@ while [ $# -gt 0 ]; do
             SELECTED="$(profile_components full)"
             CLI_MODE=1; shift ;;
         --preflight) PREFLIGHT_ONLY=1; shift ;;
+        --resume) RESUME_MODE=1; shift ;;
         --list)  list_components; exit 0 ;;
         --help|-h) usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
@@ -172,7 +178,7 @@ detect_existing() {
     DETECTED_OPENCLAW=""; DETECTED_ONBOARDED=0; DETECTED_GATEWAY=0
     if command -v "$RUNTIME_CMD" &> /dev/null; then
         if [ "$RUNTIME" = "hermes" ]; then
-            DETECTED_OPENCLAW="$(hermes version 2>/dev/null | head -1 || true)"
+            DETECTED_OPENCLAW="$(hermes --version 2>/dev/null | head -1 || true)"
         else
             DETECTED_OPENCLAW="$(openclaw --version 2>/dev/null | head -1 || true)"
         fi
@@ -394,6 +400,10 @@ echo ""
 # Core steps (always run)
 # ═══════════════════════════════════════════
 
+# Resume mode: core_runtime, core_onboard, core_gateway_check (and core_prereqs)
+# skip themselves when RESUME_MODE=1; see the guard at the head of each
+# function in install-steps.sh. The call sequence stays contiguous; the
+# resumable paths re-enter at the component loop after core_mcpdir.
 core_prereqs
 core_runtime
 core_onboard
