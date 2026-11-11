@@ -399,7 +399,8 @@ echo ""
 if [ "${RESUME_MODE:-0}" -eq 1 ]; then
     log_info "Resuming from core_deploy (skipping core_runtime, core_onboard, core_gateway_check)"
     # Load components from manifest if SUCCESSFUL_COMPONENTS not set (unset, not empty)
-    if [ -z "${SUCCESSFUL_COMPONENTS+set}" ]; then
+    # Use POSIX ${var+x} to distinguish unset from empty (codebase uses :- for defaults).
+    if [ -z "${SUCCESSFUL_COMPONENTS+x}" ]; then
         if [ -f "$NETCLAW_MANIFEST" ]; then
             SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
             log_info "Loaded components from manifest: $SUCCESSFUL_COMPONENTS"
