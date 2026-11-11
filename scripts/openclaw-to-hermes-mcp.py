@@ -22,11 +22,12 @@ sidecar file and the user is told to merge it (we never rewrite existing YAML).
 
 Usage:
     openclaw-to-hermes-mcp.py \
-        --source   config/openclaw.json \
-        --repo     /path/to/netclaw \
-        --env      ~/.hermes/.env \
-        --config   ~/.hermes/config.yaml \
-        --sidecar  ~/.hermes/netclaw-mcp-servers.yaml
+        --source      config/openclaw.json \
+        --repo        /path/to/netclaw \
+        --env         ~/.hermes/.env \
+        --config      ~/.hermes/config.yaml \
+        --sidecar     ~/.hermes/netclaw-mcp-servers.yaml \
+        --runtime-root ~/.hermes/profiles/netclaw/python-runtimes
 
 Stdlib only — no PyYAML dependency (the YAML we emit is a fixed, simple shape).
 """
@@ -48,6 +49,27 @@ _writer = importlib.util.module_from_spec(_writer_spec)
 _writer_spec.loader.exec_module(_writer)
 
 _VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
+
+
+def load_helper(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# Reuse the installer's server→component catalog (same source install-mcp-config.py
+# reads) instead of carrying a drifting hardcoded copy.
+catalog = load_helper('installer_catalog', 'verify-catalog-coverage.py')
+
+
+def component_for(server):
+    if server in catalog.GROUPED_CONFIG_EXACT:
+        return catalog.GROUPED_CONFIG_EXACT[server]
+    for prefix, component in catalog.GROUPED_CONFIG_PREFIXES.items():
+        if server.startswith(prefix):
+            return component
+    return catalog.strip_mcp_suffix(server)
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -140,7 +162,10 @@ def emit_yaml(
     repo: Path,
     env: dict[str, str],
     env_file_vars: dict[str, str],
+    server_venv_python: dict[str, str] | None = None,
 ) -> str:
+    if server_venv_python is None:
+        server_venv_python = {}
     lines = ["mcp_servers:"]
     for name, spec in servers.items():
         spec = native_entry(name, spec, env, allow_legacy=True)
@@ -148,7 +173,18 @@ def emit_yaml(
         command = spec.get("command")
         url = spec.get("url")
         if command:
-            lines.append(f"    command: {yaml_scalar(abspath_arg(str(command), repo))}")
+            # Only rewrite the interpreter for Python-launch servers; uvx/npx/node
+            # commands must pass through (matching install-mcp-config.py bind_entry,
+            # which preserves custom interpreters).
+            is_python_launcher = (
+                command in ('python', 'python3')
+                or (command.startswith('mcp-servers/') and command.endswith('/.venv/bin/python'))
+            )
+            venv_python = server_venv_python.get(name) if is_python_launcher else None
+            if venv_python:
+                lines.append(f"    command: {yaml_scalar(venv_python)}")
+            else:
+                lines.append(f"    command: {yaml_scalar(abspath_arg(str(command), repo))}")
             args = spec.get("args") or []
             if args:
                 lines.append("    args:")
@@ -174,6 +210,34 @@ def emit_yaml(
     return "\n".join(lines) + "\n"
 
 
+def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
+    """Load component venv Python paths from runtime root records directory.
+
+    Only includes paths that exist and are executable.
+    Logs a warning and skips any record that fails to read.
+    """
+    venv_python = {}
+    records_dir = Path(runtime_root) / "records"
+    try:
+        record_paths = list(records_dir.iterdir()) if records_dir.is_dir() else []
+    except OSError as e:
+        print(f"[WARN] Could not list venv records directory {records_dir}: {e}", file=sys.stderr)
+        return venv_python
+    for record in record_paths:
+        if not record.is_file():
+            continue
+        try:
+            python_path = record.read_text().strip()
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"[WARN] Could not read venv record {record}: {e}", file=sys.stderr)
+            continue
+        if python_path and os.path.exists(python_path) and os.access(python_path, os.X_OK):
+            venv_python[record.name] = python_path
+        elif python_path:
+            print(f"[WARN] Component venv Python path not executable: {python_path}", file=sys.stderr)
+    return venv_python
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", required=True, help="path to config/openclaw.json")
@@ -181,6 +245,7 @@ def main() -> int:
     ap.add_argument("--env", default="", help="shared .env for ${VAR} resolution")
     ap.add_argument("--config", required=True, help="target ~/.hermes/config.yaml")
     ap.add_argument("--sidecar", default="", help="fallback file if config.yaml already has mcp_servers")
+    ap.add_argument("--runtime-root", default="", help="path to python-runtimes dir (for component venv paths)")
     args = ap.parse_args()
 
     source = Path(args.source)
@@ -211,7 +276,34 @@ def main() -> int:
         print(f"[INFO] materialised {injected} .env var(s) implicitly inherited under "
               f"OpenClaw into their server env blocks (e.g. CML_VERIFY_SSL).")
 
-    block = emit_yaml(servers, repo, env, env_file_vars)
+    # Load component venv paths from runtime root
+    venv_python = {}
+    if args.runtime_root:
+        venv_python = load_venv_python_paths(Path(args.runtime_root))
+        if venv_python:
+            print(f"[INFO] Loaded {len(venv_python)} component venv Python paths")
+
+    # Map servers to components via the installer's shared catalog
+    component_map = {}
+    for name in servers:
+        component = component_for(name)
+        if component:
+            component_map[name] = component
+
+    # Build venv Python map for each server
+    server_venv_python = {}
+    for name, component in component_map.items():
+        if component in venv_python:
+            server_venv_python[name] = venv_python[component]
+    def _is_py_launch(spec):
+        c = spec.get("command")
+        return c in ('python', 'python3') or (c.startswith('mcp-servers/') and c.endswith('/.venv/bin/python'))
+
+    py_mapped = sum(1 for n in server_venv_python if _is_py_launch(servers.get(n, {})))
+    if py_mapped:
+        print(f"[INFO] Mapped {py_mapped} Python-launch servers to component venv Python paths")
+
+    block = emit_yaml(servers, repo, env, env_file_vars, server_venv_python)
     config = Path(args.config)
     config.parent.mkdir(parents=True, exist_ok=True)
 
