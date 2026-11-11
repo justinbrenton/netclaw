@@ -62,9 +62,10 @@ usage() {
     echo "                            merges into the recorded component set"
     echo "  --all                     install everything ($TOTAL_COMPONENTS components)"
     echo "  --preflight               check the selection without installing anything"
-    echo "  --resume                  skip core runtime steps (core_runtime, core_onboard,"
-    echo "                            core_gateway_check) and re-enter at the component"
-    echo "                            install loop; components are re-verified and re-installed"
+    echo "  --resume                  skip core steps (core_prereqs, core_runtime,"
+    echo "                            core_onboard, core_gateway_check) and re-enter at the"
+    echo "                            component install loop; components are re-verified"
+    echo "                            and re-installed"
     echo "  --list                    list all components and profiles, then exit"
     echo "  --help                    this help"
 }
@@ -399,22 +400,14 @@ echo ""
 # Core steps (always run)
 # ═══════════════════════════════════════════
 
-# Resume mode: skip core_runtime, core_onboard, core_gateway_check.
-# Components are still selected, installed/verified in the loop below, and
-# SUCCESSFUL_COMPONENTS is rebuilt from what actually succeeded before
-# core_deploy runs, so no manifest pre-load is needed (or meaningful here).
-# core_prereqs still runs: components need node/python3/uv present in resume
-# mode just as they do on a fresh install.
+# Resume mode: core_runtime, core_onboard, core_gateway_check (and core_prereqs)
+# skip themselves when RESUME_MODE=1; see the guard at the head of each
+# function in install-steps.sh. The call sequence stays contiguous; the
+# resumable paths re-enter at the component loop after core_mcpdir.
 core_prereqs
-if [ "${RESUME_MODE:-0}" -eq 1 ]; then
-    log_info "Resuming — skipping core_runtime, core_onboard, core_gateway_check"
-    log_info "Component selection and verification will run as normal"
-else
-    core_runtime
-    core_onboard
-    core_gateway_check
-fi
-
+core_runtime
+core_onboard
+core_gateway_check
 core_mcpdir
 
 # ═══════════════════════════════════════════
