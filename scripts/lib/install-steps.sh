@@ -229,7 +229,7 @@ log_step "Installing $RUNTIME_NAME..."
 # ── Hermes (Nous Research) ──
 if [ "$RUNTIME" = "hermes" ]; then
     if command -v hermes &> /dev/null; then
-        log_info "Hermes already installed: $(hermes version 2>/dev/null | head -1 || echo 'version unknown')"
+        log_info "Hermes already installed: $(hermes --version 2>/dev/null | head -1 || echo 'version unknown')"
     else
         log_info "Installing Hermes via the Nous Research installer..."
         if ! curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash; then
