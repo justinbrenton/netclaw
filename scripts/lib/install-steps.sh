@@ -229,7 +229,7 @@ log_step "Installing $RUNTIME_NAME..."
 # ── Hermes (Nous Research) ──
 if [ "$RUNTIME" = "hermes" ]; then
     if command -v hermes &> /dev/null; then
-        log_info "Hermes already installed: $(hermes version 2>/dev/null | head -1 || echo 'version unknown')"
+        log_info "Hermes already installed: $(hermes --version 2>/dev/null | head -1 || echo 'version unknown')"
     else
         log_info "Installing Hermes via the Nous Research installer..."
         if ! curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash; then
@@ -242,6 +242,7 @@ if [ "$RUNTIME" = "hermes" ]; then
             *":$HOME/.local/bin:"*) : ;;
             *) export PATH="$HOME/.local/bin:$PATH" ;;
         esac
+        hash -r
         if command -v hermes &> /dev/null; then
             log_info "Hermes installed successfully"
         else
@@ -250,7 +251,7 @@ if [ "$RUNTIME" = "hermes" ]; then
             return 1
         fi
     fi
-    hermes version >/dev/null 2>&1 || { log_error "Hermes executable verification failed"; return 1; }
+    hermes --version >/dev/null 2>&1 || { log_error "Hermes executable verification failed"; return 1; }
     echo ""
     return 0
 fi
