@@ -2557,8 +2557,8 @@ core_deploy() {
     # Resumable guard: if core_runtime failed, SUCCESSFUL_COMPONENTS may be unset.
     # Fall back to the component manifest if available.
     # Empty SUCCESSFUL_COMPONENTS is valid (zero components installed).
-    # Use parameter expansion to distinguish unset from empty: ${var+set} is "set" only if var is set.
-    if [ -z "${SUCCESSFUL_COMPONENTS+set}" ]; then
+    # Use POSIX ${var+x} to distinguish unset from empty (codebase uses :- for defaults).
+    if [ -z "${SUCCESSFUL_COMPONENTS+x}" ]; then
         log_warn "SUCCESSFUL_COMPONENTS not set — using all components from manifest"
         if [ -f "$NETCLAW_MANIFEST" ]; then
             SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
