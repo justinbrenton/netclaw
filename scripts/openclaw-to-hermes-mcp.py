@@ -255,17 +255,23 @@ def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
     """Load component venv Python paths from runtime root records directory.
     
     Only includes paths that exist and are executable.
+    Logs a warning and skips any record that fails to read.
     """
     venv_python = {}
     records_dir = Path(runtime_root) / "records"
     if records_dir.is_dir():
         for record in records_dir.iterdir():
-            if record.is_file():
+            if not record.is_file():
+                continue
+            try:
                 python_path = record.read_text().strip()
-                if python_path and os.path.exists(python_path) and os.access(python_path, os.X_OK):
-                    venv_python[record.name] = python_path
-                elif python_path:
-                    print(f"[WARN] Component venv Python path not executable: {python_path}", file=sys.stderr)
+            except (OSError, UnicodeDecodeError) as e:
+                print(f"[WARN] Could not read venv record {record}: {e}", file=sys.stderr)
+                continue
+            if python_path and os.path.exists(python_path) and os.access(python_path, os.X_OK):
+                venv_python[record.name] = python_path
+            elif python_path:
+                print(f"[WARN] Component venv Python path not executable: {python_path}", file=sys.stderr)
     return venv_python
 
 
