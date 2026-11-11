@@ -2564,7 +2564,7 @@ core_deploy() {
     # the value themselves before invoking core_deploy.
     # Use codebase convention ${var:-} for default values.
     if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
-        log_warn "SUCCESSFUL_COMPONENTS not set — using components from manifest"
+        log_warn "SUCCESSFUL_COMPONENTS not set or empty — using components from manifest"
         if [ -f "$NETCLAW_MANIFEST" ]; then
             # Same manifest parsing idiom as detect_existing() in install.sh:
             # `|| true` guards pipefail on a comments-only manifest.
