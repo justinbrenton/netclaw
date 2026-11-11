@@ -403,11 +403,13 @@ echo ""
 # Components are still selected, installed/verified in the loop below, and
 # SUCCESSFUL_COMPONENTS is rebuilt from what actually succeeded before
 # core_deploy runs, so no manifest pre-load is needed (or meaningful here).
+# core_prereqs still runs: components need node/python3/uv present in resume
+# mode just as they do on a fresh install.
+core_prereqs
 if [ "${RESUME_MODE:-0}" -eq 1 ]; then
     log_info "Resuming — skipping core_runtime, core_onboard, core_gateway_check"
     log_info "Component selection and verification will run as normal"
 else
-    core_prereqs
     core_runtime
     core_onboard
     core_gateway_check
