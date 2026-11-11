@@ -2554,7 +2554,29 @@ echo ""
 
 # ── Deploy skills and configuration ─────────────────────────────
 core_deploy() {
-log_step "Deploying skills and configuration..."
+    # Defensive fallback: this branch is reached when SUCCESSFUL_COMPONENTS
+    # is unset OR empty — which happens under a --resume path that never
+    # populated it, or when every selected component failed verification
+    # (indistinguishable from unset under the ${var:-} convention).
+    # When it happens, fall back to the component manifest if available;
+    # proceed with an empty set rather than aborting. A manifest present is
+    # trusted in that edge too; callers that need the distinction must check
+    # the value themselves before invoking core_deploy.
+    # Use codebase convention ${var:-} for default values.
+    if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
+        log_warn "SUCCESSFUL_COMPONENTS not set or empty — using components from manifest"
+        if [ -f "$NETCLAW_MANIFEST" ]; then
+            # Same manifest parsing idiom as detect_existing() in install.sh:
+            # `|| true` guards pipefail on a comments-only manifest.
+            SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" 2>/dev/null | tr '\n' ' ' | tr -s ' ' || true)"
+            SUCCESSFUL_COMPONENTS="${SUCCESSFUL_COMPONENTS# }"; SUCCESSFUL_COMPONENTS="${SUCCESSFUL_COMPONENTS% }"
+        else
+            log_warn "No component manifest found — proceeding with empty component set"
+            SUCCESSFUL_COMPONENTS=""
+        fi
+    fi
+
+    log_step "Deploying skills and configuration..."
 
 PYATS_SCRIPT="$NETCLAW_DIR/scripts/pyats-stdio.py"
 TESTBED_PATH="$NETCLAW_DIR/testbed/testbed.yaml"
