@@ -62,6 +62,9 @@ usage() {
     echo "                            merges into the recorded component set"
     echo "  --all                     install everything ($TOTAL_COMPONENTS components)"
     echo "  --preflight               check the selection without installing anything"
+    echo "  --resume                  skip core runtime steps (core_runtime, core_onboard,"
+    echo "                            core_gateway_check) and re-enter at the component"
+    echo "                            install loop; components are re-verified and re-installed"
     echo "  --list                    list all components and profiles, then exit"
     echo "  --help                    this help"
 }
@@ -91,6 +94,7 @@ SELECTED=""
 CLI_MODE=0
 ADD_MODE=0
 PREFLIGHT_ONLY=0
+RESUME_MODE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -173,7 +177,7 @@ detect_existing() {
     DETECTED_OPENCLAW=""; DETECTED_ONBOARDED=0; DETECTED_GATEWAY=0
     if command -v "$RUNTIME_CMD" &> /dev/null; then
         if [ "$RUNTIME" = "hermes" ]; then
-            DETECTED_OPENCLAW="$(hermes version 2>/dev/null | head -1 || true)"
+            DETECTED_OPENCLAW="$(hermes --version 2>/dev/null | head -1 || true)"
         else
             DETECTED_OPENCLAW="$(openclaw --version 2>/dev/null | head -1 || true)"
         fi
@@ -395,20 +399,13 @@ echo ""
 # Core steps (always run)
 # ═══════════════════════════════════════════
 
-# Resume mode: skip core_runtime, core_onboard, core_gateway_check
+# Resume mode: skip core_runtime, core_onboard, core_gateway_check.
+# Components are still selected, installed/verified in the loop below, and
+# SUCCESSFUL_COMPONENTS is rebuilt from what actually succeeded before
+# core_deploy runs, so no manifest pre-load is needed (or meaningful here).
 if [ "${RESUME_MODE:-0}" -eq 1 ]; then
-    log_info "Resuming from core_deploy (skipping core_runtime, core_onboard, core_gateway_check)"
-    # Load components from manifest if SUCCESSFUL_COMPONENTS not set
-    # Use codebase convention ${var:-} for default values.
-    if [ -z "${SUCCESSFUL_COMPONENTS:-}" ]; then
-        if [ -f "$NETCLAW_MANIFEST" ]; then
-            SUCCESSFUL_COMPONENTS="$(grep -v '^#' "$NETCLAW_MANIFEST" | tr '\n' ' ')"
-            log_info "Loaded components from manifest: $SUCCESSFUL_COMPONENTS"
-        else
-            log_error "RESUME_MODE requires NETCLAW_MANIFEST to load components — cannot resume"
-            exit 1
-        fi
-    fi
+    log_info "Resuming — skipping core_runtime, core_onboard, core_gateway_check"
+    log_info "Component selection and verification will run as normal"
 else
     core_prereqs
     core_runtime
