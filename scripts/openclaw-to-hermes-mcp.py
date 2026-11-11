@@ -217,19 +217,23 @@ def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
     """
     venv_python = {}
     records_dir = Path(runtime_root) / "records"
-    if records_dir.is_dir():
-        for record in records_dir.iterdir():
-            if not record.is_file():
-                continue
-            try:
-                python_path = record.read_text().strip()
-            except (OSError, UnicodeDecodeError) as e:
-                print(f"[WARN] Could not read venv record {record}: {e}", file=sys.stderr)
-                continue
-            if python_path and os.path.exists(python_path) and os.access(python_path, os.X_OK):
-                venv_python[record.name] = python_path
-            elif python_path:
-                print(f"[WARN] Component venv Python path not executable: {python_path}", file=sys.stderr)
+    try:
+        record_paths = list(records_dir.iterdir()) if records_dir.is_dir() else []
+    except OSError as e:
+        print(f"[WARN] Could not list venv records directory {records_dir}: {e}", file=sys.stderr)
+        return venv_python
+    for record in record_paths:
+        if not record.is_file():
+            continue
+        try:
+            python_path = record.read_text().strip()
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"[WARN] Could not read venv record {record}: {e}", file=sys.stderr)
+            continue
+        if python_path and os.path.exists(python_path) and os.access(python_path, os.X_OK):
+            venv_python[record.name] = python_path
+        elif python_path:
+            print(f"[WARN] Component venv Python path not executable: {python_path}", file=sys.stderr)
     return venv_python
 
 
