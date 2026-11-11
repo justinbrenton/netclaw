@@ -2585,7 +2585,8 @@ if [ "$RUNTIME" = "hermes" ]; then
                 --repo   "$NETCLAW_DIR" \
                 --env    "$RUNTIME_ENV" \
                 --config "$RUNTIME_CONFIG" \
-                --sidecar "$RUNTIME_HOME/netclaw-mcp-servers.yaml"; then
+                --sidecar "$RUNTIME_HOME/netclaw-mcp-servers.yaml" \
+                --runtime-root "$NETCLAW_RUNTIME_ROOT"; then
             log_info "Registered NetClaw MCP servers into $RUNTIME_CONFIG"
         else
             log_error "MCP translation failed — check $RUNTIME_CONFIG"

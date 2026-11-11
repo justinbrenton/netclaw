@@ -51,6 +51,27 @@ _writer_spec.loader.exec_module(_writer)
 _VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}")
 
 
+def load_helper(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# Reuse the installer's server→component catalog (same source install-mcp-config.py
+# reads) instead of carrying a drifting hardcoded copy.
+catalog = load_helper('installer_catalog', 'verify-catalog-coverage.py')
+
+
+def component_for(server):
+    if server in catalog.GROUPED_CONFIG_EXACT:
+        return catalog.GROUPED_CONFIG_EXACT[server]
+    for prefix, component in catalog.GROUPED_CONFIG_PREFIXES.items():
+        if server.startswith(prefix):
+            return component
+    return catalog.strip_mcp_suffix(server)
+
+
 def parse_env_file(path: Path) -> dict[str, str]:
     """Parse a KEY=VALUE .env file. Missing file -> empty dict."""
     if not path or not path.is_file():
@@ -150,13 +171,16 @@ def emit_yaml(
         command = spec.get("command")
         url = spec.get("url")
         if command:
-            # Use component venv Python for stdio servers
-            venv_python = None
-            if name in server_venv_python:
-                venv_python = server_venv_python[name]
-
-            if venv_python:
-                lines.append(f"    command: {yaml_scalar(venv_python)}")
+            # Only rewrite the interpreter for Python-launch servers; uvx/npx/node
+            # commands must pass through (matching install-mcp-config.py bind_entry,
+            # which preserves custom interpreters).
+            is_python_launcher = (
+                command in ('python', 'python3')
+                or (command.startswith('mcp-servers/') and command.endswith('/.venv/bin/python'))
+            )
+            venc_python = server_venv_python.get(name) if is_python_launcher else None
+            if venc_python:
+                lines.append(f"    command: {yaml_scalar(venc_python)}")
             else:
                 lines.append(f"    command: {yaml_scalar(abspath_arg(str(command), repo))}")
             args = spec.get("args") or []
@@ -183,72 +207,6 @@ def emit_yaml(
         lines.append(f"    enabled: {enabled}")
     return "\n".join(lines) + "\n"
 
-
-
-def component_for_server(server: str) -> str | None:
-    """Map a server name to its component (from install-mcp-config.py logic)."""
-    exact_map = {
-        "batfish-mcp": "batfish",
-        "n2n-mcp": "n2n",
-        "rag-mcp": "rag-mcp",
-        "protocol-mcp": "protocol",
-        "gait-mcp": "gait",
-        "globalping-mcp": "globalping",
-        "bgp-intel-mcp": "bgp-intel",
-        "document-mcp": "document",
-        "jev-mcp": "jev",
-        "pyats-mcp": "pyats",
-        "netbox-mcp": "netbox",
-        "servicenow-mcp": "servicenow",
-        "nvd-cve-mcp": "nvd-cve",
-        "subnet-calc-mcp": "subnet-calc",
-        "wikipedia-mcp": "wikipedia",
-        "markmap-mcp": "markmap",
-        "drawio-mcp": "drawio-rfc",
-        "rfc-mcp": "drawio-rfc",
-        "packet-buddy-mcp": "packet-buddy",
-        "nmap-mcp": "nmap",
-        "gtrace-mcp": "gtrace",
-        "tts-mcp": "tts",
-        "suzieq-mcp": "suzieq",
-        "uml-mcp": "uml",
-    }
-    if server in exact_map:
-        return exact_map[server]
-
-    prefix_map = {
-        "batfish": "batfish",
-        "n2n": "n2n",
-        "rag": "rag-mcp",
-        "protocol": "protocol",
-        "gait": "gait",
-        "globalping": "globalping",
-        "bgp-intel": "bgp-intel",
-        "document": "document",
-        "jev": "jev",
-        "pyats": "pyats",
-        "netbox": "netbox",
-        "servicenow": "servicenow",
-        "nvd-cve": "nvd-cve",
-        "subnet-calc": "subnet-calc",
-        "wikipedia": "wikipedia",
-        "markmap": "markmap",
-        "drawio": "drawio-rfc",
-        "rfc": "drawio-rfc",
-        "packet-buddy": "packet-buddy",
-        "nmap": "nmap",
-        "gtrace": "gtrace",
-        "tts": "tts",
-        "suzieq": "suzieq",
-        "uml": "uml",
-    }
-    for prefix, component in prefix_map.items():
-        if server.startswith(prefix):
-            return component
-
-    if server.endswith("-mcp"):
-        return server[:-4]
-    return None
 
 
 def load_venv_python_paths(runtime_root: Path) -> dict[str, str]:
@@ -320,10 +278,10 @@ def main() -> int:
         if venv_python:
             print(f"[INFO] Loaded {len(venv_python)} component venv Python paths")
 
-    # Map servers to components
+    # Map servers to components via the installer's shared catalog
     component_map = {}
     for name in servers:
-        component = component_for_server(name)
+        component = component_for(name)
         if component:
             component_map[name] = component
 
@@ -334,13 +292,6 @@ def main() -> int:
             server_venv_python[name] = venv_python[component]
     if server_venv_python:
         print(f"[INFO] Mapped {len(server_venv_python)} servers to component venv Python paths")
-
-    injected = sum(
-        len(companion_env(s.get("env") or {}, env_file_vars)) for s in servers.values()
-    )
-    if injected:
-        print(f"[INFO] materialised {injected} .env var(s) implicitly inherited under "
-              f"OpenClaw into their server env blocks (e.g. CML_VERIFY_SSL).")
 
     block = emit_yaml(servers, repo, env, env_file_vars, server_venv_python)
     config = Path(args.config)

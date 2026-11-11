@@ -175,7 +175,11 @@ def main():
         if component not in selected:
             continue
         record = args.runtime_root / 'records' / component
-        runtime = record.read_text().strip() if record.exists() else None
+        try:
+            runtime = record.read_text().strip() if record.exists() else None
+        except (OSError, UnicodeDecodeError) as e:
+            print(f'[WARN] could not read venv record {record}: {e}', file=sys.stderr)
+            runtime = None
         generated[name] = native_entry(name, bind_entry(entry, repo, runtime), values, repo)
         if component == 'gait':
             generated[name].setdefault('env', {})['GAIT_VENV'] = str(args.runtime_root.resolve().parent / 'gait-venv')
