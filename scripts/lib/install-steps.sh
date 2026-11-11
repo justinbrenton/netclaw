@@ -2554,13 +2554,12 @@ echo ""
 
 # ── Deploy skills and configuration ─────────────────────────────
 core_deploy() {
-    # Defensive fallback: core_deploy is normally reached only after the
-    # component loop has initialised SUCCESSFUL_COMPONENTS, so an unset/empty
-    # value here means the caller (e.g. a resume path) never populated it.
-    # When that happens, fall back to the component manifest if available;
-    # proceed with an empty set rather than aborting. Empty also occurs when
-    # every selected component fails verification — indistinguishable from
-    # unset under the codebase's ${var:-} convention, so a manifest present is
+    # Defensive fallback: this branch is reached when SUCCESSFUL_COMPONENTS
+    # is unset OR empty — which happens under a --resume path that never
+    # populated it, or when every selected component failed verification
+    # (indistinguishable from unset under the ${var:-} convention).
+    # When it happens, fall back to the component manifest if available;
+    # proceed with an empty set rather than aborting. A manifest present is
     # trusted in that edge too; callers that need the distinction must check
     # the value themselves before invoking core_deploy.
     # Use codebase convention ${var:-} for default values.
